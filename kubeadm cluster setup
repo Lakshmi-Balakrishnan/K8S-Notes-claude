@@ -1,0 +1,217 @@
+kubeadm clustert setup
+
+22 Mar
+Here's a concise guide to setting up a Kubernetes cluster with kubeadm:
+
+Prerequisites
+All nodes:
+
+Ubuntu 20.04/22.04 (or similar Linux)
+2+ CPUs, 2GB+ RAM
+Unique hostname, MAC, and product_uuid
+Swap disabled
+Ports open (6443, 2379-2380, 10250-10259)
+Step 1 — Prepare All Nodes
+bash
+# Disable swap
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+# Load required kernel modules
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# Sysctl settings
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+sudo sysctl --system
+Step 2 — Install Container Runtime (containerd)
+bash
+# Install containerd
+sudo apt-get update
+sudo apt-get install -y containerd
+
+# Generate default config
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+
+# Enable SystemdCgroup
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+Step 3 — Install kubeadm, kubelet, kubectl
+bash
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl gpg
+
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+  https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | \
+  sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+
+sudo systemctl enable --now kubelet
+Step 4 — Initialize the Control Plane (Master only)
+bash
+sudo kubeadm init \
+  --pod-network-cidr=192.168.0.0/16 \   # For Calico; use 10.244.0.0/16 for Flannel
+  --apiserver-advertise-address=<MASTER_IP>
+After init, set up kubectl access:
+
+bash
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+Step 5 — Install a Pod Network (CNI)
+Calico (recommended):
+
+bash
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
+Or Flannel:
+
+bash
+kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+Step 6 — Join Worker Nodes
+Run the join command printed by kubeadm init on each worker:
+
+bash
+sudo kubeadm join <MASTER_IP>:6443 \
+  --token <token> \
+  --discovery-token-ca-cert-hash sha256:<hash>
+If the token expired, generate a new one on the master:
+
+bash
+kubeadm token create --print-join-command
+Step 7 — Verify the Cluster
+bash
+kubectl get nodes          # All nodes should show Ready
+kubectl get pods -A        # All system pods should be Running
+Quick Reference
+Component	Role
+kubeadm init	Bootstraps the control plane
+kubelet	Runs on every node, manages pods
+kubectl	CLI to interact with the cluster
+CNI plugin	Enables pod-to-pod networking
+Common issues:
+
+If nodes show NotReady, the CNI plugin is likely not installed yet
+kubeadm reset cleanly tears down a node if you need to start over
+Use kubectl describe node <name> to debug node issues
+Let me know if you want to go deeper on any step — HA control plane, specific CNI configs, or troubleshooting!
+
+i am a beginner firast time installed the cluseter . could you teach me intamil . first can we create teh deployment with teh cli like kubectl create deploymetn adn then service.
+
+teach me in tamil
+
+22 Mar
+Kubernetes Deployment & Service - Tamil-இல் கற்போம்! 🎉
+முதலில் - Cluster சரியாக இருக்கிறதா பார்க்கலாம்
+bash
+kubectl get nodes
+என்ன பார்க்க வேண்டும்:
+
+NAME         STATUS   ROLES           AGE   VERSION
+master-node  Ready    control-plane   10m   v1.32.0
+worker-node  Ready    <none>          8m    v1.32.0
+STATUS = Ready என்று வந்தால் cluster சரியாக உள்ளது ✅
+
+📦 Step 1: Deployment உருவாக்குவோம்
+Deployment என்றால் என்ன? உங்கள் application-ஐ pod-களில் run பண்ணும் ஒரு manager.
+
+bash
+kubectl create deployment my-app --image=nginx --replicas=2
+இதை பிரிச்சு பார்க்கலாம்:
+Part	Tamil விளக்கம்
+kubectl	Kubernetes-ஓட CLI tool
+create deployment	புதிய deployment உருவாக்கு
+my-app	நாம் கொடுக்கும் பெயர்
+--image=nginx	எந்த docker image பயன்படுத்தணும்
+--replicas=2	2 copies of the app run பண்ணு
+✅ Step 2: Deployment வந்துவிட்டதா பார்க்கலாம்
+bash
+kubectl get deployments
+Output இப்படி வரும்:
+
+NAME     READY   UP-TO-DATE   AVAILABLE   AGE
+my-app   2/2     2            2           30s
+READY = 2/2 என்றால் 2 pods-உம் running ✅
+
+🔍 Step 3: Pods பார்க்கலாம்
+bash
+kubectl get pods
+Output:
+
+NAME                      READY   STATUS    RESTARTS   AGE
+my-app-6d4cf56d9f-abc12   1/1     Running   0          1m
+my-app-6d4cf56d9f-xyz99   1/1     Running   0          1m
+Pods = உங்கள் application actually run ஆகும் இடம்
+
+🌐 Step 4: Service உருவாக்குவோம்
+Service என்றால் என்ன? உங்கள் app-ஐ outside world-க்கு expose பண்ணும் ஒரு door.
+
+bash
+kubectl expose deployment my-app --port=80 --type=NodePort
+இதை பிரிச்சு பார்க்கலாம்:
+Part	Tamil விளக்கம்
+expose deployment my-app	my-app deployment-ஐ expose பண்ணு
+--port=80	port 80-ல் கேள் (nginx default port)
+--type=NodePort	Node-ஓட IP வழியா access பண்ணலாம்
+✅ Step 5: Service வந்துவிட்டதா பார்க்கலாம்
+bash
+kubectl get services
+Output:
+
+NAME         TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+kubernetes   ClusterIP  10.96.0.1       <none>        443/TCP        20m
+my-app       NodePort   10.106.45.123   <none>        80:31500/TCP   10s
+80:31500 என்றால் → port 31500 வழியா browser-ல் access பண்ணலாம்
+
+🌍 Step 6: Browser-ல் பார்க்கலாம்
+bash
+# Node IP கண்டுபிடிக்க:
+kubectl get nodes -o wide
+பிறகு browser-ல் திறக்கவும்:
+
+http://<NODE-IP>:31500
+Nginx welcome page வந்தால் - நீங்கள் செய்தது வெற்றி! 🎉
+
+📋 Full Summary - ஒரே பார்வையில்
+bash
+# 1. Deployment உருவாக்கு
+kubectl create deployment my-app --image=nginx --replicas=2
+
+# 2. Deployment பார்
+kubectl get deployments
+
+# 3. Pods பார்
+kubectl get pods
+
+# 4. Service உருவாக்கு
+kubectl expose deployment my-app --port=80 --type=NodePort
+
+# 5. Service பார்
+kubectl get services
+🗑️ Clean Up (Delete பண்ண)
+bash
+kubectl delete service my-app
+kubectl delete deployment my-app
+அடுத்து என்ன கற்க விரும்புகிறீர்கள்? 😊
+
+YAML file மூலம் deployment உருவாக்குவது
+Scaling (pods எண்ணிக்கை கூட்டுவது/குறைப்பது)
+Logs பார்ப்பது / Troubleshooting
