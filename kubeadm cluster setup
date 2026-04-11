@@ -141,7 +141,8 @@ kubectl	Kubernetes-ஓட CLI tool
 create deployment	புதிய deployment உருவாக்கு
 my-app	நாம் கொடுக்கும் பெயர்
 --image=nginx	எந்த docker image பயன்படுத்தணும்
---replicas=2	2 copies of the app run பண்ணு
+--replicas=2	2 copies of the app run பண்ண
+
 ✅ Step 2: Deployment வந்துவிட்டதா பார்க்கலாம்
 bash
 kubectl get deployments
@@ -210,8 +211,1126 @@ kubectl get services
 bash
 kubectl delete service my-app
 kubectl delete deployment my-app
-அடுத்து என்ன கற்க விரும்புகிறீர்கள்? 😊
 
-YAML file மூலம் deployment உருவாக்குவது
-Scaling (pods எண்ணிக்கை கூட்டுவது/குறைப்பது)
-Logs பார்ப்பது / Troubleshooting
+Kubeadm என்றால் என்ன?
+kubeadm என்பது production-ready Kubernetes cluster-ஐ manually setup செய்ய உதவும் ஒரு tool.
+Minikube vs Kubeadm — வித்தியாசம் என்ன?
+                 Minikube	                       Kubeadm
+எதற்காக	       Local practice மட்டும்	        Real cluster setup
+Nodes	           Single node only	              Multi-node cluster
+பயன்பாடு	       Learning / Development	        Production / Staging
+Complexity	     எளிமையானது	                கொஞ்சம் complex
+இயங்கும் இடம்	 உங்கள் laptop	                Real servers / VMs
+
+
+Kubeadm எப்படி வேலை செய்கிறது?
+Master Node (Control Plane)
+        ↓
+kubeadm init        ← Master-ஐ initialize செய்யும்
+        ↓
+Worker Nodes
+        ↓
+kubeadm join        ← Workers-ஐ cluster-ல் சேர்க்கும்
+
+Step-by-Step Setup
+முதலில் — எல்லா nodes-லும் செய்யவும்
+1️⃣ Prerequisites install செய்யுங்கள்
+
+bash# Docker / containerd install
+sudo apt-get update
+sudo apt-get install -y containerd
+
+# kubeadm, kubelet, kubectl install
+sudo apt-get install -y kubelet kubeadm kubectl
+
+2️⃣ Swap off செய்யுங்கள் (Kubernetes-க்கு இது அவசியம்)
+bash  sudo swapoff -a
+Master Node-ல் மட்டும் செய்யவும்
+3️⃣ Cluster initialize செய்யுங்கள்
+bashsudo kubeadm init --pod-network-cidr=10.244.0.0/16
+
+4️⃣ kubectl configure செய்யுங்கள்
+bash  
+mkdir -p $HOME/.kube
+sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+5️⃣ Network plugin install செய்யுங்கள் (Pods communicate ஆக)
+bashkubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+
+Worker Nodes-ல் செய்யவும்
+6️⃣ Cluster-ல் join செய்யுங்கள்
+kubeadm init-ல் கிடைத்த token-ஐ பயன்படுத்துங்கள்:
+bashsudo kubeadm join <master-ip>:6443 --token <token> \
+    --discovery-token-ca-cert-hash sha256:<hash>
+
+Verify செய்யுங்கள்
+7️⃣ Nodes ready ஆனதா பாருங்கள்
+bashkubectl get nodes
+
+# Output இப்படி இருக்கும்:
+# NAME       STATUS   ROLES           AGE
+# master     Ready    control-plane   5m
+# worker-1   Ready    <none>          2m
+# worker-2   Ready    <none>          2m
+
+Kubeadm-ல் உள்ள முக்கிய Commands
+Command                   என்ன செய்யும்   
+kubeadm init              Master node initialize  
+kubeadm join              Worker node-ஐ cluster-ல் சேர்க்கும்  
+kubeadm reset             Cluster-ஐ முழுவதும்  reset செய்யும்     
+kubeadm token create      புதிய join token உருவாக்கும் 
+kubeadm upgrade           Kubernetes version upgrade செய்யும்
+
+Important Concepts
+🔐 etcd
+Master node-ல் உள்ள database. Cluster-இன் எல்லா data-வும் இங்கே store ஆகும். இது போனால் cluster போச்சு — backup எடுக்கவும்!
+🌐 CNI (Network Plugin)
+Pods ஒன்றோடொன்று பேச network plugin வேண்டும். Popular options: Flannel, Calico, Weave.
+📜 kubeconfig
+kubectl எந்த cluster-உடன் பேச வேண்டும் என்று சொல்லும் file. ~/.kube/config இல் இருக்கும்.
+
+Learning Path இப்போது எப்படி இருக்கும்?
+Docker ✅
+    ↓
+Minikube + kubectl ✅
+    ↓
+Kubeadm (இப்போது கற்கிறீர்கள்) 🔄
+    ↓
+Deployments, Services, ConfigMaps
+    ↓
+Helm Charts
+    ↓
+Production (EKS / GKE / AKS)
+
+Master Node (Control Plane)
+Master node என்பது Kubernetes cluster-இன் மூளை (Brain). இது எல்லாவற்றையும் கட்டுப்படுத்தும்.
+
+1️⃣ API Server
+என்ன செய்யும்?
+
+Kubernetes-இன் main entry point
+நீங்கள் kubectl command type செய்யும்போது, அது API Server-உடன் பேசும்
+எல்லா components-உம் API Server மூலமாகவே communicate செய்யும்
+நீங்கள் (kubectl)
+      ↓
+  API Server        ← எல்லாரும் இதனிடம் பேசுவார்கள்
+      ↓
+etcd / Scheduler / Controller Manager
+1️⃣ API Server
+What it does:
+
+It is the front door / main entry point of Kubernetes
+Every time you run a kubectl command, it talks to the API Server
+All other components communicate only through the API Server  
+You (kubectl command)
+        ↓
+    API Server        ← Single point of communication
+        ↓
+Scheduler / Controller Manager / etcd   
+2️⃣ Scheduler
+என்ன செய்யும்?
+
+புதிய Pod உருவாகும்போது, எந்த Worker Node-ல் run ஆக வேண்டும் என்று decide செய்யும்
+Node-இன் CPU, Memory பார்த்து best node-ஐ தேர்வு செய்யும்
+
+புதிய Pod வேண்டும்
+        ↓
+    Scheduler
+        ↓
+Worker Node 1 → CPU 80% full ❌
+Worker Node 2 → CPU 20% only ✅ 
+2️⃣ Scheduler
+What it does:
+
+When a new Pod needs to be created, the Scheduler decides which Worker Node it should run on
+It checks each node's available CPU and Memory before assigning
+
+        ↓
+Worker Node 2-ல் Pod place செய்யும்
+3️⃣ Controller Manager
+என்ன செய்யும்?
+
+Cluster-இன் desired state vs actual state தொடர்ந்து check செய்யும்
+ஏதாவது தவறாக இருந்தால் சரி செய்யும்
+
+உள்ளே இருக்கும் controllers:
+Controller                 வேலை      
+Node Controller            Node down ஆனால் detect செய்யும் 
+Replication Controller     தேவையான pod count maintain செய்யும் 
+Deployment Controller      Deployment updates handle செய்யும் 
+Service Controller         Services manage செய்யும்
+நீங்கள் சொன்னது  →  replicas: 3 வேண்டும்
+Actual state     →  2 pods மட்டுமே running
+Controller       →  1 pod குறைகிறது! உடனே புதிது உருவாக்கு!
+3️⃣ Controller Manager
+What it does:
+
+Continuously watches the cluster's desired state vs actual state
+If something is wrong, it automatically fixes it
+It runs multiple controllers inside it
+
+4️⃣ etcd
+என்ன செய்யும்?
+
+Kubernetes-இன் database
+Cluster-இன் எல்லா information-உம் இங்கே store ஆகும்
+Key-Value format-ல் data வைக்கும்
+என்னென்ன store ஆகும்?
+✅ எத்தனை pods இயங்குகின்றன
+✅ எந்த node-ல் என்ன இருக்கிறது
+✅ Configurations, Secrets
+✅ Cluster-இன் முழு state 
+4️⃣ etcd
+What it does: 
+It is the database of Kubernetes
+Stores the entire cluster state as key-value pairs
+Every piece of information about your cluster lives here
+✅ How many pods are running
+✅ Which pod is on which node
+✅ All configurations and secrets
+✅ Complete cluster state
+
+Worker Node
+Worker Node என்பது actual-ஆக app இயங்கும் இடம்.
+1️⃣ Kubelet
+என்ன செய்யும்?
+Worker node-இன் main agent
+Master node-இடமிருந்து instructions வாங்கி pods-ஐ run செய்யும்
+Pod healthy-ஆக இருக்கிறதா என்று தொடர்ந்து check செய்யும்  
+worker node
+The Worker Node is where your actual application runs. There can be many worker nodes in a cluster
+1️⃣ Kubelet
+What it does:
+It is the main agent running on every worker node
+It receives instructions from the Master Node and runs the pods
+Continuously monitors if pods are healthy and running
+
+2️⃣ Kube-Proxy
+என்ன செய்யும்?
+Network traffic-ஐ சரியான pod-க்கு route செய்யும்
+ஒவ்வொரு node-லும் இருக்கும்
+Services-க்கு networking handle செய்யும்  
+User Request வருகிறது
+        ↓
+   Kube-Proxy
+        ↓
+எந்த pod available? → அந்த pod-க்கு அனுப்பும்
+
+2️⃣ Kube-Proxy
+What it does:
+
+Handles all network traffic on the node
+Routes incoming requests to the correct Pod
+Runs on every worker node
+
+3️⃣ Container Runtime
+என்ன செய்யும்?
+
+Actually container-ஐ run செய்யும் engine
+Popular options: containerd, Docker, CRI-O
+
+Kubelet → "இந்த image-ஐ run செய்"
+               ↓
+      Container Runtime
+               ↓
+      Container இயங்கும் ✅
+3️⃣ Container Runtime
+What it does:
+
+The engine that actually runs the containers
+Kubelet tells it what to run, and it executes it
+Popular options: containerd, Docker, CRI-O
+
+Final Summary Table
+Component	             Where           	One Line Job
+API Server	          Master	          Gateway for all requests
+Scheduler	            Master	          Assigns pods to nodes
+Controller Manager    master	          Keeps desired state
+etcd	                Master	         Stores all cluster data
+Kubelet	              Worker	         Runs pods on the node
+Kube-Proxy	          Worker	         Handles networking
+Container Runtime   	Worker	         Runs the containers
+
+What is a Taint?
+A taint is a mark you put on a node that says: "Not just any pod can run here."
+Think of it like a "restricted area" sign on a node.
+Only pods with the right toleration (permission pass) can ente
+
+The 3 parts of a Taint
+kubectl taint nodes node-gpu gpu=true:NoSchedule
+Part            Meaning                          Example
+key             What kind of restriction         gpu 
+value           Specific label                   true 
+effect          What happens to pods             noSchedule
+
+The 3 Effects — very important!
+Effect                   What it does      
+NoSchedule               New pods without toleration will NOT be scheduled here  
+PreferNoSchedule         K8s will try to avoid this node, but not a hard block
+NoExecute                Evicts even already-running pods that don't tolerate it
+ 
+Toleration — the pod's "pass"
+You add this to your pod's YAML so it can run on a tainted node:
+yamltolerations:
+- key: "gpu"
+  operator: "Equal"
+  value: "true"
+  effect: "NoSchedule"
+இப்போ அந்த pod சொல்கிறது: "என்னிடம் gpu=true pass இருக்கு, உள்ளே வரலாம்!"
+எளிய நினைவு வழி 🧠
+
+Toleration என்பது node-ல் உள்ள taint-ஐ அப்படியே copy செய்வது போல்!
+
+Node-ல் உள்ளது:   disk = ssd : NoSchedule
+Pod-ல் எழுதுவது:  key=disk, value=ssd, effect=NoSchedule
+அதாவது — node-ல் என்ன taint இருக்கோ, அதையே pod-ல் toleration-ஆக எழுத வேண்டும். Exactly match ஆக வேண்டும்
+
+Real-world use cases
+
+gpu=true:NoSchedule — reserve GPU nodes only for ML workloads
+env=prod:NoSchedule — keep production nodes clean from dev pods
+disk=ssd:NoSchedule — only database pods can use fast SSD nodes
+node.kubernetes.io/not-ready:NoExecute — automatically evict pods when a node goes down
+
+இதன் அர்த்தம்: node-gpu என்ற நோட்டில் gpu=true என்ற தடை போட்டோம். 
+Pass இல்லாத pods வர முடியாது.
+GPU என்றால் என்ன?
+GPU = Graphics Processing Unit
+சாதாரண computer-ல் CPU இருக்கும் — அது normal கணக்குகள் செய்யும்.
+GPU என்பது special chip — இது லட்சக்கணக்கான கணக்குகளை ஒரே நேரத்தில் செய்யும்!
+இப்போ Toleration கற்கலாமா? 🎯
+Taint = Node-ல் போடும் தடை
+Toleration = Pod-க்கு கொடுக்கும் அனுமதி pass
+உதாரணம்:
+node-1-ல் இந்த taint இருக்கு:
+# 1. Nodes பார்த்தோம்
+kubectl get nodes
+
+# 2. Taint போட்டோம்
+kubectl taint nodes node01 gpu=true:NoSchedule
+
+# 3. Taint confirm செய்தோம்
+kubectl describe node node01 | grep Taints
+
+# 4. Toleration இல்லாத pod போட்டோம்
+kubectl run plain-pod --image=nginx
+# → controlplane-ல் போச்சு! node01 தடை செய்தது!
+
+# 5. Toleration உள்ள pod போட்டோம்
+kubectl apply -f gpu-pod.yaml
+# → node01-ல் போச்சு! Toleration வேலை செய்தது!
+cat << EOF > gpu-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-pod
+spec:
+  tolerations:
+  - key: "gpu"
+    value: "true"
+    effect: "NoSchedule"
+  containers:
+  - name: gpu
+    image: nginx
+EOF
+
+# 6. Clean up செய்தோம்
+kubectl delete pod gpu-pod
+kubectl delete pod plain-pod
+kubectl taint nodes node01 gpu=true:NoSchedule-
+# 1. Taint போட்டோம்
+kubectl taint nodes node01 env=prod:NoSchedule
+
+# 2. Toleration இல்லாத pod
+kubectl run devteam --image=nginx
+# → controlplane-ல் போச்சு! ✅
+
+# 3. Toleration உள்ள pod YAML எழுதினோம்
+cat << EOF > prod-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: prod-pod
+spec:
+  tolerations:
+  - key: "env"
+    value: "prod"
+    effect: "NoSchedule"
+  containers:
+  - name: prod
+    image: nginx
+EOF
+
+# 4. Apply செய்தோம்
+kubectl apply -f prod-pod.yaml
+# → node01-ல் போச்சு! ✅
+
+# 5. Clean up
+kubectl delete pod devteam
+kubectl delete pod prod-pod
+kubectl taint nodes node01 env=prod:NoSchedule-
+நீங்கள் Taint & Toleration Expert ஆகிவிட்டீர்கள்! 💪🎉
+
+
+OU ARE 100% JOB READY! 🎉
+All fresher level topics done!
+Hands-on practice complete!
+Now — Mock Interview! 🎯
+Are you ready to test everything? 😊 can we start      1. Pod        = Smallest unit in K8s
+                runs your container!
+2. Deployment = Manages multiple pod copies
+                auto restart if pod dies!
+3. Service    = Exposes pods to network
+                stable IP for your app!
+4. Taint      = Restriction on node
+                "don't come without permission!"
+5. Toleration = Permission pass for pod
+                "I have permission to enter!"
+6. Affinity   = Pod chooses preferred node
+                "I want to run here!"
+7. ConfigMap  = Stores normal config data
+                app_color, app_port etc!
+8. Secret     = Stores sensitive data
+                passwords, API keys encoded!
+9. PV & PVC   = Persistent storage
+                data safe even pod deleted!
+10. Namespace = Department in K8s
+                keeps resources separated!                     
+
+
+
+
+
+ 
+
+  
+Sure Lakshmi! Here are all YAML files — simple and clear! 💪
+
+1. Pod YAML
+yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+2. Pod with Toleration YAML
+yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-pod
+spec:
+  tolerations:
+  - key: "gpu"
+    value: "true"
+    effect: "NoSchedule"
+  containers:
+  - name: my-container
+    image: nginx
+3. Deployment YAML
+yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: my-container
+        image: nginx
+4. Service YAML
+yaml
+# ClusterIP — inside cluster only
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  selector:
+    app: myapp
+  ports:
+  - port: 80
+    targetPort: 80
+yaml
+# NodePort — outside access
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: myapp
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30001
+yaml
+# LoadBalancer — cloud access
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-loadbalancer
+spec:
+  type: LoadBalancer
+  selector:
+    app: myapp
+  ports:
+  - port: 80
+    targetPort: 80
+5. Node Affinity YAML
+yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: affinity-pod
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: disk
+            operator: In
+            values:
+            - ssd
+  containers:
+  - name: my-container
+    image: nginx
+6. Resource Limits YAML
+yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resource-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+7. Probes YAML
+yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 3
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    startupProbe:
+      httpGet:
+        path: /start
+        port: 8080
+      failureThreshold: 30
+      periodSeconds: 10
+8. ConfigMap YAML
+yaml
+# Create ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-configmap
+data:
+  app_color: blue
+  app_port: "8080"
+yaml
+# Use ConfigMap in Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+    envFrom:
+    - configMapRef:
+        name: my-configmap
+9. Secret YAML
+yaml
+# Create Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+type: Opaque
+data:
+  password: cGFzc3dvcmQxMjM=  # base64 encoded
+  api_key: YWJjZGVmZ2g=
+yaml
+# Use Secret in Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secret-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+    envFrom:
+    - secretRef:
+        name: my-secret
+10. PV and PVC YAML
+yaml
+# PV — Admin creates
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+  - ReadWriteOnce
+  hostPath:
+    path: /data
+yaml
+# PVC — Developer requests
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+yaml
+# Pod using PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-pod
+spec:
+  volumes:
+  - name: my-storage
+    persistentVolumeClaim:
+      claimName: my-pvc
+  containers:
+  - name: my-container
+    image: nginx
+    volumeMounts:
+    - mountPath: /data
+      name: my-storage
+11. RBAC YAML
+yaml
+# Create Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dev-role
+  namespace: dev
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+yaml
+# Create RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dev-rolebinding
+  namespace: dev
+subjects:
+- kind: User
+  name: lakshmi
+roleRef:
+  kind: Role
+  name: dev-role
+  apiGroup: rbac.authorization.k8s.io
+12. HPA YAML
+yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+Quick Reference — All apiVersion! 📋
+Kind	apiVersion
+Pod	v1
+Deployment	apps/v1
+Service	v1
+ConfigMap	v1
+Secret	v1
+PV	v1
+PVC	v1
+Role	rbac.authorization.k8s.io/v1
+RoleBinding	rbac.authorization.k8s.io/v1
+HPA	autoscaling/v2
+Quick Reference — All Commands! 📋
+bash
+# Pod
+kubectl get pods
+kubectl get pods -o wide
+kubectl describe pod pod-name
+kubectl logs pod-name
+kubectl delete pod pod-name
+
+# Deployment
+kubectl get services
+
+
+
+ 
+
+
+
+
+
+
+
+
+ INTERVIEW
+1.What is Kubernetes? Why do we use it?
+✅ Perfect Interview Answer:
+
+👉 Kubernetes is an open-source container orchestration platform.
+It is used to automate deployment, scaling, and management of containerized applications.
+👉 It provides:
+Auto scaling
+Self-healing (recreates pods)
+Rolling updates & rollback
+
+1.what you know about Kubernetes
+Kubernetes is an open source container orchestration system that automatically deploys, 
+scales, and manages containerized applications across a cluster of nodes!
+✅ Open source
+✅ Container orchestration system
+✅ Automatically deploys
+✅ Scales
+✅ Manages
+✅ Containerized applications
+✅ Cluster of nodes
+
+2.What is a Pod? Why is it the smallest unit?
+✅ Perfect Interview Answer:
+
+👉 A Pod is the smallest deployable unit in Kubernetes.
+It contains one or more containers where the application runs.
+
+Containers in a pod share network and storage
+Each pod gets its own IP address
+Pods are ephemeral (temporary)
+If a pod crashes, Kubernetes recreates it
+
+👉 Why smallest unit?
+Because Kubernetes does not deploy containers directly — it always deploys them inside a pod.
+
+2.What is a Pod in Kubernetes? And what command do you use to check running pods?"
+Perfect Answer:
+"Pod is the smallest unit in Kubernetes that runs one or more containers inside it.
+Pods are ephemeral — meaning they are temporary. 
+Every pod gets a unique IP address and shares network within the cluster. 
+When a pod crashes, the Deployment automatically recreates it! 
+Command to check pods is
+kubectl get pods or kubectl get pods -o wide to see which node it runs on!"
+✅ Smallest unit in K8s
+✅ Runs containers inside
+✅ Pods are ephemeral
+✅ Every pod has IP address
+✅ Pods share network
+✅ Auto restart when crashed
+✅ kubectl get pods — correct command!
+
+
+3.What is the difference between Pod and Deployment?
+✅ Perfect Interview Answer:
+
+👉 Pod:
+Smallest unit in Kubernetes
+Runs application containers
+Temporary (ephemeral)
+
+👉 Deployment:
+Manages and controls pods
+Ensures required number of pods are running
+Supports scaling, rolling updates, and rollback
+3.What is the difference between a Pod and a Deployment?"
+
+Pod is the smallest unit that runs containers — but if a pod crashes,
+it cannot restart itself! Deployment is a higher level resource that manages multiple copies of pods called replicas. 
+If a pod crashes, Deployment automatically restarts it. 
+Deployment also handles rolling updates — updating app without downtime!"
+
+What you said — Good! ✅
+✅ Pod is smallest unit
+✅ Pod has own IP
+✅ Pod shares network
+✅ Deployment manages resources
+What was missing: ❌
+❌ Pod alone = no auto restart!
+❌ Deployment = manages REPLICAS
+❌ Deployment = auto restart pods
+❌ Deployment = rolling updates
+
+4.What is a Service? What are its types
+✅ Perfect Interview Answer:
+
+👉 Service provides a stable network endpoint to access pods.
+
+Pods are ephemeral (IP changes when restarted)
+So Service gives a stable IP/DNS name
+It also provides load balancing between pod
+🔹 Types of Service:
+ClusterIP (default)
+👉 Accessible inside cluster only
+NodePort
+👉 Accessible outside cluster using NodeIP:Port
+LoadBalancer
+👉 Accessible from internet (cloud load balancer)
+
+4.What is a Service in Kubernetes? What are the types of Services?"
+
+"Service in Kubernetes gives a stable IP address to pods.
+Even if a pod crashes and restarts with a new IP, 
+the Service IP stays the same! 
+There are 3 types:
+1.ClusterIP — default type, accessible only inside the cluster!
+2.NodePort — accessible outside cluster using NodeIP and port range 30000-32767!
+3.LoadBalancer — used in cloud like AWS, GCP — gives external IP automatically!"
+
+5."What is a Taint and Toleration? When would you use it?"
+
+Taint is a restriction applied on a node that prevents unwanted pods from being scheduled on it. 
+Toleration is applied on a pod as a permission pass to enter a tainted node.
+Taint has 3 parts — key, value, and effect.
+The pod's toleration must exactly match the node's taint to be allowed! 
+I would use this when I want to reserve GPU nodes only for ML workloads or production nodes only for production pods! 
+Command is kubectl taint nodes node01 gpu=true:NoSchedule"
+✅ Taint = node restriction
+✅ Toleration = permission pass for pod
+✅ Used when specific pod needs 
+   specific node
+✅ Key, Value, Effect — correct!
+✅ Matching toleration allows pod
+✅ Command — almost correct
+
+5.What is the difference between ConfigMap and Secret?"
+What you said — Perfect! ✅
+✅ ConfigMap = non sensitive data
+✅ Examples — app_color, app_name
+✅ Everyone can see — plain text
+✅ Secret = sensitive data
+✅ Example — password, API keys
+✅ Base64 encoded — correct!
+ConfigMap stores non-sensitive data like app_color, app_name in plain text —
+everyone can see it! Secret stores sensitive data like passwords and API keys — 
+but it is base64 encoded for security. ConfigMap is for normal config, Secret is for confidential data!"
+
+5.What is ConfigMap and Secret? What is the difference?
+👉 ConfigMap:
+Stores non-sensitive data
+Example:
+app_color
+app_port
+db_host
+Stored in plain tex
+text
+👉 Secret:
+Stores sensitive data
+Example:
+password
+API key
+Stored in base64 encoded format
+
+
+6.What is a Namespace? Why do we use it?
+
+👉 Namespace is used to logically divide a Kubernetes cluster into multiple environments.
+Helps separate:
+Dev
+Test
+Production
+👉 It is used for:
+Resource isolation between teams
+Better organization of resources
+Applying resource limits
+6.What is a Namespace? Why do we use it?
+✅ Namespace = logical partition
+✅ Used to organize resources
+✅ Isolation of resources
+✅ Dev namespace example — correct
+perfect Answer:
+"Namespace is a logical partition in Kubernetes that isolates and organizes resources. 
+Without namespace, all pods from all teams are in one place — very confusing! With 
+namespace, we separate them. For example — dev namespace for developers, 
+prod namespace for production, testing namespace for QA team. Each team sees only their own resources! K8s has 4 default namespaces — default, kube-system,
+kube-public, kube-node-lease!"
+
+
+
+
+
+
+7.What is PV and PVC in Kubernetes? Why do we need it?"
+✅ PV = Admin creates storage
+✅ PV = has storage size (10GB)
+✅ PVC = Developer requests storage
+✅ PVC = requests specific size (5GB)
+✅ Pod uses PVC to access storage
+"PV — Persistent Volume is created by the admin — it represents actual storage like 10GB in the cluster.
+PVC — Persistent Volume Claim is created by the developer — it requests storage like 5GB
+The pod uses PVC to access that storage! The main reason we use PV and PVC is — when a pod is deleted, normally data is lost! But with PV, 
+data stays safe and persistent even after pod deletion!"
+7.What is PV and PVC? 
+👉 Persistent Volume (PV):
+It is storage in Kubernetes
+Data is not deleted even if pod is deleted
+👉 Persistent Volume Claim (PVC):
+It is a request for storage by pod
+Developer requests storage (e.g., 5GB)
+
+
+8.What is HPA?
+👉 HPA (Horizontal Pod Autoscaler) is used to automatically scale the number of pods based on load.
+If traffic or CPU usage is high → pods increase (scale up)
+If traffic is low → pods decrease (scale down)
+👉 It works based on:
+CPU
+Memory (or custom metrics)
+
+
+9.What are Probes in Kubernetes? What are the 3 types?"
+Probes are health checks in Kubernetes to monitor container status. There are 3 types:
+
+Liveness Probe — checks if container is alive. If it fails, K8s restarts the container automatically!
+Readiness Probe — checks if container is ready to receive traffic. If it fails, K8s removes pod from Service — no traffic sent!
+Startup Probe — checks if container has started successfully. Used for slow starting apps. Until startup probe passes, liveness and readiness probes are disabled!"
+9.Difference between Liveness Probe and Readiness Probe?
+✅ Perfect Interview Answer:
+👉 Liveness Probe:
+Checks if the application is alive
+If it fails → Kubernetes restarts the pod
+👉 Readiness Probe:
+Checks if the application is ready to serve traffic
+If it fails → Kubernetes stops sending traffic (no restart)
+
+What is the difference between Liveness Probe and Readiness Probe? Give a real world example!"
+✅ Liveness = are you ok check
+✅ Liveness fail = restart pod
+✅ Readiness = is pod ready for traffic
+✅ Readiness fail = don't send traffic
+One small addition missing: ❌
+❌ Real world example
+❌ initialDelaySeconds concept
+
+Perfect Answer:
+"Liveness Probe checks is the container alive? — if it fails, K8s restarts the pod automatically! Readiness Probe checks is the container ready to receive traffic? — if it fails, K8s removes the pod from Service so no traffic is sent!
+Real world example:
+Imagine a restaurant 🍽️
+Liveness = Is the restaurant open? If closed — restart!
+Readiness = Is the food ready to serve? If not ready — don't send customers!"
+asy way to remember:
+Liveness  = Are you ALIVE? 🫀
+            No → Restart pod!
+            
+Readiness = Are you READY? 🚦
+            No → No traffic!
+            Still running — just not serving!
+
+
+10.What will you do if a pod is not running?
+1. Check pod status
+kubectl get pods
+👉 See status:
+Pending / CrashLoopBackOff / Error
+
+2. Describe pod (VERY IMPORTANT 🔥)
+kubectl describe pod <pod-name>
+👉 Check:
+Events
+Scheduling issues
+Image errors
+
+3. Check logs
+kubectl logs <pod-name>
+👉 Find application errors
+
+4. Check node status
+kubectl get nodes
+👉 Node down?
+
+5. Fix issue:
+Image issue
+Resource issue
+Config issue
+
+11.What is RBAC in Kubernetes? How does it work?"
+RBAC stands for Role Based Access Control — it controls WHO can do WHAT in Kubernetes!
+It has 4 parts:
+
+1.Role — defines what actions are allowed. Example: can read pods, can create deployments!
+2.ClusterRole — same as Role but works across ALL namespaces!
+3.RoleBinding — connects a Role to a User or ServiceAccount!
+4.ServiceAccount — identity given to a pod to access K8s resources!
+
+For example — Developer can only READ pods but cannot DELETE them. Admin can do everything!"
+
+12.What happens when a node goes down in Kubernetes? How does K8s handle it?
+Hint:
+When node goes down...
+→ What happens to pods on that node?
+→ Who detects the node is down?
+→ What does K8s do automatically?
+
+What you said — Good! ✅
+✅ Node goes down — pods recreated
+✅ HPA — autoscaling correct!
+✅ High traffic — pods increase
+✅ Low traffic — pods decrease
+What was missing: ❌
+❌ WHO detects node is down?
+   → Controller Manager detects!
+
+❌ HOW LONG before K8s acts?
+   → 5 minutes (pod eviction timeout)
+
+❌ WHERE are pods recreated?
+   → On other healthy nodes!
+
+❌ HPA is separate topic!
+   → Node down ≠ HPA
+Perfect Answer:
+"When a node goes down, the Controller Manager detects it within 40 seconds.
+After about 5 minutes, K8s marks the node as NotReady and starts evicting pods. 
+Those pods are automatically recreated on other healthy nodes in the cluster! 
+This is why we use Deployments — because Deployment ensures the desired number of replicas are always running. 
+If we had just a plain pod without Deployment,
+it would be lost forever when the node goes down
+
+Easy way to remember:
+Node goes down
+      ↓
+Controller Manager detects (40 sec)
+      ↓
+Node marked NotReady (5 min)
+      ↓
+Pods evicted from dead node
+      ↓
+Pods recreated on healthy nodes ✅
+
+13.What is Resource Requests and Limits in Kubernetes? Why is it important?
+✅ Requests = amount pod asks for
+✅ Requests = CPU and Memory
+✅ Limits = maximum allowed
+✅ Limits = CPU and Memory
+Small additions missing: ❌
+❌ WHY it is important?
+❌ What happens if limit exceeded?
+❌ YAML example
+Resource Requests is the minimum amount of CPU and Memory a container needs 
+— K8s uses this to schedule the pod on a suitable node! 
+Resource Limits is the maximum amount of CPU and Memory a container is allowed to use!
+It is important because — without limits, one pod can use ALL the node's resources and starve other pods!
+If a container exceeds memory limit, K8s kills and restarts it. If it exceeds CPU limit,
+K8s throttles it — slows it down!"
+Easy way to remember:
+Requests = Minimum need 📉
+           "I need at least 256MB!"
+           Used for SCHEDULING!
+
+Limits   = Maximum allowed 📈
+           "You can use max 512MB!"
+           Cross it → killed/throttled!
+
+14."What is the difference between Rolling Update and Recreate strategy in Deployment?"
+What you said — Good! ✅
+✅ New pod created with updated image
+✅ Old pods killed — correct!
+What was missing: ❌
+❌ Which one is Rolling Update?
+❌ Which one is Recreate?
+❌ Downtime difference!
+❌ Which is DEFAULT strategy?
+
+There are 2 deployment strategies:
+Rolling Update — K8s creates new pods one by one with updated image and slowly kills old pods. 
+No downtime! App is always available during update. 
+This is the default strategy in Kubernetes!
+Recreate — K8s kills ALL old pods first, then creates new pods. This causes
+downtime — app is unavailable for some time. 
+Used when old and new versions cannot run at the same time
+Easy way to remember:
+Rolling Update = Train moving 🚂
+                 new coaches added
+                 old coaches removed
+                 train never stops!
+                 NO downtime! ✅
+
+Recreate       = Bus stop 🚌
+                 old bus leaves first
+                 wait for new bus
+                 passengers wait!
+                 DOWNTIME! ❌
+
+15.What is HPA in Kubernetes? How does it work?"
+What you said — Perfect! ✅
+✅ HPA = Horizontal Pod Autoscaling
+✅ Low traffic = minimum pods
+✅ High traffic = automatically add pods
+✅ Low traffic = automatically remove pods
+One small addition missing: ❌
+❌ Based on WHAT does HPA scale?
+   → CPU usage, Memory usage!
+❌ Metrics Server needed!
+HPA stands for Horizontal Pod Autoscaler. 
+It automatically scales the number of pods based on CPU or Memory usage! 
+For example — if I set minimum 2 pods and maximum 10 pods,
+when traffic is low only 2 pods run.
+When traffic increases and CPU goes above 70%, HPA automatically adds more pods up to 10! When traffic decreases, HPA removes extra pods back to 2. 
+HPA needs Metrics Server installed to monitor CPU and Memory!"
+Low traffic  → CPU 20%  → 2 pods  📉
+High traffic → CPU 80%  → 8 pods  📈
+Back to low  → CPU 20%  → 2 pods  📉
+
+HPA watches CPU/Memory
+and scales automatically!
+
+
+
