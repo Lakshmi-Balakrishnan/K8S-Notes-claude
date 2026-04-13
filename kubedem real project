@@ -1,3 +1,5 @@
+ claude real project  
+
 Hands-on lab: Taints & Tolerations
 Real scenario · Real commands · kubeadm cluster · ~45 minutes
 Real-world scenario: Your company has a 3-node kubeadm cluster. One node has a GPU and should ONLY run ML workloads. Another node is reserved for production apps only. You need to enforce this using Taints and Tolerations — exactly what companies do in production.
