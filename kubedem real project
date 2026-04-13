@@ -1,0 +1,239 @@
+Hands-on lab: Taints & Tolerations
+Real scenario · Real commands · kubeadm cluster · ~45 minutes
+Real-world scenario: Your company has a 3-node kubeadm cluster. One node has a GPU and should ONLY run ML workloads. Another node is reserved for production apps only. You need to enforce this using Taints and Tolerations — exactly what companies do in production.
+1
+Understand the concept in 2 minutes
+Concept
+Think of a Taint as a "NO ENTRY" sign on a node. A Toleration is the special pass that lets a pod enter despite the sign. Without the pass, no pod can land on that node.
+A Taint has 3 parts: key=value:effect
+The effect controls what happens to pods without a toleration:
+— NoSchedule: new pods won't be scheduled here
+— NoExecute: existing pods get evicted + new pods blocked
+— PreferNoSchedule: K8s tries to avoid this node but not guaranteed
+2
+Check your cluster nodes first
+Practice
+Run these — see your nodes
+kubectl get nodes
+# Note down your worker node names
+kubectl get nodes -o wide
+# See IPs and roles too
+kubectl describe node <worker-node-name> | grep Taint
+# See existing taints — master node has one by default!
+Expected output (describe on master)
+Taints: node-role.kubernetes.io/control-plane:NoSchedule
+This is why pods never land on the master node — it has a NoSchedule taint by default! You just discovered a real taint already running in your cluster.
+3
+Add a taint to your worker node (GPU simulation)
+Practice
+Pretend your worker node is a GPU node. Taint it so only ML workloads can run there.
+Taint the worker node
+kubectl taint node <worker-node-name> gpu=true:NoSchedule
+# key=gpu, value=true, effect=NoSchedule
+kubectl describe node <worker-node-name> | grep Taint
+# Confirm the taint was applied
+Expected output
+Taints: gpu=true:NoSchedule
+Now try deploying a normal pod — it should get STUCK
+kubectl run normal-pod --image=nginx
+kubectl get pods -o wide
+# Watch — STATUS will be "Pending" forever!
+kubectl describe pod normal-pod | grep -A5 Events
+# You'll see: "didn't tolerate" in the events
+Expected — pod gets blocked
+Warning FailedScheduling 0/2 nodes available: 1 node(s) had untolerated taint {gpu: true}, 1 node(s) had untolerated taint {control-plane}.
+Why this matters in interviews
+This error message is exactly what you'll see in production when a pod is Pending. Saying "I know this error — it means the pod doesn't have a toleration for the node's taint" immediately shows real experience.
+4
+Deploy a pod WITH a toleration — it should run
+Practice
+Now create an ML pod that has the correct toleration. Save this as ml-pod.yaml
+ml-pod.yamlCopy
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ml-pod
+  labels:
+    app: ml-workload
+spec:
+  tolerations:             # The special PASS
+    - key: "gpu"           # Must match taint key
+      operator: "Equal"
+      value: "true"        # Must match taint value
+      effect: "NoSchedule" # Must match taint effect
+  containers:
+    - name: ml-container
+      image: nginx
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+Apply and verify
+kubectl apply -f ml-pod.yaml
+kubectl get pods -o wide
+# ml-pod should be Running on the worker node!
+kubectl get pods -o wide --field-selector spec.nodeName=<worker-node-name>
+# Confirm it landed on the GPU node specifically
+Expected — ml-pod is Running, normal-pod is Pending
+NAME STATUS NODE ml-pod Running worker-node-1 normal-pod Pending <none>5
+Test NoExecute — evict running pods
+5 
+Advanced test
+NoExecute is stronger than NoSchedule. It kicks out pods that are ALREADY running on the node. This is what happens when a node goes into maintenance.
+First remove old taint, add NoExecute
+kubectl taint node <worker-node-name> gpu=true:NoSchedule-
+# The "-" at the end REMOVES the taint
+kubectl run running-pod --image=nginx
+kubectl get pods -o wide
+# Wait for running-pod to land on worker node
+kubectl taint node <worker-node-name> maintenance=true:NoExecute
+# Now add NoExecute taint — watch what happens!
+kubectl get pods -o wide -w
+# -w means watch live. You'll see running-pod get Terminating!
+Expected — pod gets evicted live
+running-pod Running worker-node-1 running-pod Terminating worker-node-1 ← evicted!
+Interview gold — say this
+"NoExecute is used in node drain scenarios — when a node needs maintenance, K8s taints it with NoExecute so running pods are safely evicted and rescheduled on other nodes. kubectl drain does this automatically."
+
+6
+Clean up + self-check
+Cleanup
+Remove taints and pods after practice
+kubectl taint node <worker-node-name> gpu=true:NoSchedule-
+kubectl taint node <worker-node-name> maintenance=true:NoExecute-
+kubectl delete pod normal-pod ml-pod running-pod
+kubectl describe node <worker-node-name> | grep Taint
+# Should show: Taints: <none>
+Can you answer all of these? Check them off:
+What is the difference between NoSchedule and NoExecute?
+How do you REMOVE a taint from a node?
+What happens to a pod if it has a Toleration but no NodeAffinity — can it land on OTHER nodes too?
+What is the difference between Taint+Toleration and NodeAffinity?
+When would you use PreferNoSchedule instead of NoSchedule?
+Question 1 of 5
+Imagine you are in an interview right now. Answer this:
+
+You have a 3-node Kubernetes cluster. You want to make sure that ONLY your machine learning pods run on node-1, and no other pods should land there. What do you do?
+
+Take your time — type your answer in your own words. Don't copy from Google. The more you write in your own words, the better feedback I can give you.
+Feedback on Question 1
+What you got right
+Putting a taint gpu=true:NoSchedule on node01 — that is correct. That prevents normal pods from landing on that node.
+What you missed — this is the trick in the question
+The question said "ONLY ML pods should run there."
+A Taint alone does NOT guarantee that. A Toleration only gives a pod permission to land on the tainted node — it does NOT force it there.
+So your ML pod with a toleration could still land on node02 or node03 instead!
+The complete answer needs TWO things:
+Taint on the node     → blocks unwanted pods from coming IN
+NodeAffinity on pod   → forces ML pod to go TO that specific node
+Together they work like this:
+What it doesToolStop other pods from entering node01Taint + NoScheduleForce ML pod to go to node01 specificallyNodeAffinity
+The full answer an interviewer wants to hear
+
+"I would taint node01 with gpu=true:NoSchedule so normal pods can't schedule there. Then on the ML pod I'd add a Toleration to allow it past the taint, AND a NodeAffinity rule to force it specifically onto node01. Using only a Taint+Toleration is not enough — the pod could still land on another node."
+
+Question 2 of 5
+You are doing well — don't worry, this is how you learn. Next question:
+
+What is the difference between NoSchedule and NoExecute? Give me a real example of when you would use NoExecute.
+
+Feedback on Question 2
+What you got right
+NoExecute — evicts already running pods AND blocks new ones. That is 100% correct! You clearly ran the lab exercise.
+Small correction on NoSchedule
+You said — "no one can come here only running pod"
+That is almost right but one word needs fixing:
+
+NoSchedule = new pods cannot be scheduled here, BUT pods that are already running on the node stay running — they are NOT evicted.
+
+So the difference is:
+EffectNew pods blocked?Already running pods evicted?NoScheduleYesNo — they stayNoExecuteYesYes — kicked outPreferNoScheduleTries to avoid, not guaranteedNo
+Real example for NoExecute — say this in interviews
+
+"When a node needs to go into maintenance, we use kubectl drain which internally applies a NoExecute taint. This safely evicts all running pods so they reschedule on other nodes before we shut the node down."
+Question 3 of 5
+You're doing great — 2/2 with good understanding. Next:
+
+You run kubectl describe pod my-pod and see this in the Events section:
+Warning  FailedScheduling  0/3 nodes available:
+1 node(s) had untolerated taint {gpu: true},
+2 node(s) had untolerated taint {control-plane}
+Error Message
+Warning  FailedScheduling  0/3 nodes available:
+1 node(s) had untolerated taint {gpu: true},
+2 node(s) had untolerated taint {control-plane}
+🧠 இதன் அர்த்தம் (Simple Tamil)
+
+👉 Kubernetes சொல்லுது:
+
+💥 “எனக்கு 3 nodes இருக்கு… ஆனா எந்த node-லும் இந்த pod-ஐ run பண்ண முடியல!”
+
+🔍 Line by Line Explanation
+👉 0/3 nodes available
+
+👉 3 nodes இருக்குது
+❌ ஆனா 0 nodes தான் usable
+
+👉 1 node(s) had untolerated taint {gpu: true}
+
+👉 ஒரு node (GPU node) இருக்குது
+
+அந்த node-ல:
+
+gpu=true:NoSchedule
+
+👉 Problem:
+❌ pod-க்கு GPU toleration இல்லை
+
+👉 Result:
+💥 அந்த node reject பண்ணிடுச்சு
+
+👉 2 node(s) had untolerated taint {control-plane}
+
+👉 2 nodes control-plane taint உடன் இருக்கு
+
+node-role.kubernetes.io/control-plane:NoSchedule
+
+👉 Problem:
+❌ pod-க்கு control-plane toleration இல்லை
+
+👉 Result:
+💥 அந்த nodes-லும் reject
+
+🎯 Final Meaning (Very Simple)
+
+👉 எல்லா nodes-மும் “NO ENTRY” சொல்றாங்க
+
+👉 pod-க்கு pass (toleration) இல்ல
+
+👉 அதனால்:
+
+Pod = Pending ❌
+🧠 Real Life Example
+
+👉 Imagine:
+
+1 room → GPU மட்டும் allowed
+2 rooms → VIP மட்டும் allowed
+
+👉 நீ normal person 😄
+
+❌ எந்த room-லும் போக முடியாது
+
+🔥 எப்படி fix பண்ணுவது?
+✅ Option 1: Toleration add பண்ணு
+tolerations:
+- key: "gpu"
+  operator: "Equal"
+  value: "true"
+  effect: "NoSchedule"
+✅ Option 2: Taint remove பண்ணு (lab use only)
+kubectl taint nodes node01 gpu=true:NoSchedule-
+🧠 Interview Answer (Tamil + English mix)
+
+நீ இப்படிச் சொல்லலாம்:
+
+“இந்த error meaning என்னனா pod-க்கு எந்த node-க்கும் match ஆகுற toleration இல்ல. அதனால Kubernetes scheduler எந்த node-க்கும் assign பண்ண முடியல.”
+
+🔥 இது சொன்னா interviewer impress
+
