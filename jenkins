@@ -1,0 +1,128 @@
+Phase 1: Create Infrastructure
+
+✅ Launch an AWS EC2 Ubuntu instance.
+Phase 2: Prepare the Server
+
+Connect to EC2 using SSH:
+
+ssh -i key.pem ubuntu@<public-ip>
+
+Then update the server:
+
+sudo apt update
+sudo apt upgrade -y
+Phase 3: Install Required Software
+
+You installed:
+
+✅ Java 17 (required for Jenkins)
+
+java -version
+
+✅ Docker
+
+docker --version        
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo systemctl status docker
+
+
+
+Phase 4: Run Jenkins using Docker
+
+
+Step 1: Create the Docker volume
+sudo docker volume create jenkins_home
+Step 2: Pull the Jenkins image
+sudo docker pull jenkins/jenkins:lts-jdk17
+Step 3: Run Jenkins
+
+Now execute this exact command:
+
+sudo docker run -d \
+  --name jenkins \
+  -p 8080:8080 \
+  -p 50000:50000 \
+  -v jenkins_home:/var/jenkins_home \
+  jenkins/jenkins:lts-jdk17
+Run Jenkins:
+
+Step 4: Verify
+Check the container:
+
+docker ps
+Step 5: Get the Jenkins password
+Get the admin password:
+
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+Step 6: Open Jenkins
+
+http://EC2-PUBLIC-IP:8080
+
+
+Phase 5: Configure Jenkins
+
+Inside Jenkins:
+Step 1: Enter the Jenkins container (from the EC2 terminal)
+sudo docker exec -u root -it jenkins bash
+
+✅ Install tools
+
+Git
+Maven
+JDK
+
+(You installed Maven inside the Jenkins container for practice.
+In production, many teams use Jenkins tool configuration or prebuilt Docker images
+Step 2: Update package information
+apt update
+Step 3: (Optional for learning)
+apt upgrade -y
+
+In production, people usually avoid apt upgrade inside containers because containers are meant to be immutable. For learning, it's okay.
+
+Step 4: Check or install tools
+
+Git:
+git --version
+apt install git -y
+
+Maven:
+mvn -version
+apt install maven -y
+
+Java:
+java -version
+apt install openjdk-17-jdk -y
+
+Phase 6: Build a Java Project
+
+Clone the Spring PetClinic project:
+
+git clone ...
+
+Go into the project:
+
+cd spring-petclinic
+
+Build it:
+
+mvn clean package -DskipTests
+
+Result:
+
+BUILD SUCCESSBUILD SUCCESS
+
+Generated:
+
+target/
+   spring-petclinic-4.0.0-SNAPSHOT.jar
+
+
+
+
+
+
+
+
+
